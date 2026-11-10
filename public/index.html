@@ -235,7 +235,7 @@
         if (!room) { wantRoom = null; store.del("ss_room"); }
         break;
       case "kicked":
-        leaveLocal(); toast("Хост исключил тебя из комнаты"); break;
+        leaveLocal(); toast(m.ban ? "Хост забанил тебя в этой комнате" : "Хост кикнул тебя из комнаты"); break;
       case "replaced":
         wantRoom = null; toast("Ты открыл комнату в другой вкладке"); break;
     }
@@ -272,9 +272,11 @@
       if (isHost && p.id !== me) {
         const mk = document.createElement("button"); mk.className = "small"; mk.title = "Сделать хостом"; mk.textContent = "★";
         mk.onclick = () => sendMsg({ t: "makehost", id: p.id });
-        const kick = document.createElement("button"); kick.className = "small danger"; kick.title = "Исключить"; kick.textContent = "✕";
-        kick.onclick = () => { if (confirm(`Исключить ${p.name}?`)) sendMsg({ t: "kick", id: p.id }); };
-        li.append(mk, kick);
+        const kick = document.createElement("button"); kick.className = "small danger"; kick.title = "Кикнуть (сможет зайти снова)"; kick.textContent = "✕";
+        kick.onclick = () => { if (confirm(`Кикнуть ${p.name}? Он сможет зайти снова.`)) sendMsg({ t: "kick", id: p.id }); };
+        const ban = document.createElement("button"); ban.className = "small danger"; ban.title = "Забанить (не сможет вернуться)"; ban.textContent = "⛔";
+        ban.onclick = () => { if (confirm(`Забанить ${p.name}? Он не сможет вернуться в эту комнату.`)) sendMsg({ t: "kick", id: p.id, ban: true }); };
+        li.append(mk, kick, ban);
       }
       ul.append(li);
     }

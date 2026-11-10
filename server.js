@@ -98,7 +98,7 @@ function removePlayer(room, id) {
 }
 
 function joinRoom(ws, room, name, token) {
-  if (room.banned.has(token)) return send(ws, { t: "error", msg: "Хост исключил тебя из этой комнаты" });
+  if (room.banned.has(token)) return send(ws, { t: "error", msg: "Хост забанил тебя в этой комнате" });
   let p = [...room.players.values()].find((x) => x.token === token);
   if (p) {
     if (p.ws && p.ws !== ws) {
@@ -215,9 +215,9 @@ wss.on("connection", (ws, req) => {
         if (!isHost || m.id === player.id) return;
         const target = room.players.get(m.id);
         if (!target) return;
-        room.banned.add(target.token);
+        if (m.ban) room.banned.add(target.token);
         clearTimeout(target.dropTimer);
-        send(target.ws, { t: "kicked" });
+        send(target.ws, { t: "kicked", ban: !!m.ban });
         if (target.ws) {
           target.ws.ctx = null;
           target.ws.close();
