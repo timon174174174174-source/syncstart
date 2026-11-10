@@ -9,7 +9,7 @@ const { WebSocketServer } = require("ws");
 const PORT = Number(process.env.PORT) || 8080;
 const MAX_ROOMS = 500;
 const MAX_PLAYERS = 16;
-const GRACE_MS = 30_000; // keep a disconnected player this long
+const GRACE_MS = Number(process.env.GRACE_MS) || 30_000; // keep a disconnected player this long
 const ROOM_IDLE_MS = 6 * 3600_000;
 const COUNTDOWNS = [3, 5, 10, 15];
 
@@ -245,10 +245,7 @@ wss.on("connection", (ws, req) => {
     const { room, player } = ctx;
     if (player.ws !== ws) return;
     player.ws = null;
-    if (room.host === player.id) {
-      const other = [...room.players.values()].find((p) => p.ws);
-      if (other) room.host = other.id;
-    }
+    // the host keeps the role during the grace period; it moves on only if they don't come back
     broadcast(room);
     player.dropTimer = setTimeout(() => {
       if (!player.ws && room.players.get(player.id) === player) removePlayer(room, player.id);

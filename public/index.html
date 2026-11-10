@@ -288,6 +288,10 @@
 
     $("hostBox").classList.toggle("hidden", !isHost);
     $("waitHost").classList.toggle("hidden", isHost);
+    const hostP = players.find((p) => p.id === room.host);
+    $("waitHost").textContent = hostP && !hostP.online
+      ? "Хост отключился, ждём его до 30 секунд…"
+      : "Отсчёт запускает хост";
     $("secs").value = String(room.seconds);
     $("secs").disabled = !!room.countdown;
     $("btnStart").disabled = !allReady || !!room.countdown;
