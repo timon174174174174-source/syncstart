@@ -236,6 +236,8 @@
         break;
       case "kicked":
         leaveLocal(); toast(m.ban ? "Хост забанил тебя в этой комнате" : "Хост кикнул тебя из комнаты"); break;
+      case "closed":
+        leaveLocal(); toast("Хост закрыл комнату"); break;
       case "replaced":
         wantRoom = null; toast("Ты открыл комнату в другой вкладке"); break;
     }
@@ -270,13 +272,11 @@
       st.textContent = p.ready ? "готов" : "не готов";
       li.append(dot, name, st);
       if (isHost && p.id !== me) {
-        const mk = document.createElement("button"); mk.className = "small"; mk.title = "Сделать хостом"; mk.textContent = "★";
-        mk.onclick = () => sendMsg({ t: "makehost", id: p.id });
         const kick = document.createElement("button"); kick.className = "small danger"; kick.title = "Кикнуть (сможет зайти снова)"; kick.textContent = "✕";
         kick.onclick = () => { if (confirm(`Кикнуть ${p.name}? Он сможет зайти снова.`)) sendMsg({ t: "kick", id: p.id }); };
         const ban = document.createElement("button"); ban.className = "small danger"; ban.title = "Забанить (не сможет вернуться)"; ban.textContent = "⛔";
         ban.onclick = () => { if (confirm(`Забанить ${p.name}? Он не сможет вернуться в эту комнату.`)) sendMsg({ t: "kick", id: p.id, ban: true }); };
-        li.append(mk, kick, ban);
+        li.append(kick, ban);
       }
       ul.append(li);
     }
@@ -290,13 +290,14 @@
     $("waitHost").classList.toggle("hidden", isHost);
     const hostP = players.find((p) => p.id === room.host);
     $("waitHost").textContent = hostP && !hostP.online
-      ? "Хост отключился, ждём его до 30 секунд…"
+      ? "Хост отключился, ждём его возвращения…"
       : "Отсчёт запускает хост";
     $("secs").value = String(room.seconds);
     $("secs").disabled = !!room.countdown;
     $("btnStart").disabled = !allReady || !!room.countdown;
     $("btnForce").classList.toggle("hidden", allReady || !!room.countdown);
     $("btnCancel").classList.toggle("hidden", !isHost);
+    $("btnLeave").textContent = isHost ? "Закрыть комнату" : "Выйти из комнаты";
 
     if (room.countdown) startCountdown(room.countdown); else stopCountdown();
   }
@@ -351,7 +352,10 @@
   };
   $("btnCancel").onclick = () => sendMsg({ t: "cancel" });
   $("secs").onchange = () => sendMsg({ t: "seconds", v: Number($("secs").value) });
-  $("btnLeave").onclick = () => { sendMsg({ t: "leave" }); leaveLocal(); };
+  $("btnLeave").onclick = () => {
+    if (room && room.host === me && !confirm("Закрыть комнату для всех?")) return;
+    sendMsg({ t: "leave" }); leaveLocal();
+  };
   $("btnSound").onclick = () => { beep(660, 0.12); setTimeout(() => beep(1320, 0.4, 0.35), 350); };
   $("btnCopy").onclick = async () => {
     const url = `${location.origin}${location.pathname}?r=${room.code}`;

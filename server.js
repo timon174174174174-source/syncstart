@@ -81,20 +81,24 @@ function broadcast(room) {
   for (const p of room.players.values()) send(p.ws, st);
 }
 
-function pickNewHost(room) {
-  const list = [...room.players.values()];
-  const next = list.find((p) => p.ws) || list[0];
-  room.host = next ? next.id : null;
-}
-
+// The creator is the host for the whole life of the room; the role never moves.
 function removePlayer(room, id) {
   room.players.delete(id);
   if (room.players.size === 0) {
     rooms.delete(room.code);
     return;
   }
-  if (room.host === id) pickNewHost(room);
   broadcast(room);
+}
+
+function closeRoom(room) {
+  clearTimeout(room.cdTimer);
+  for (const p of room.players.values()) {
+    clearTimeout(p.dropTimer);
+    send(p.ws, { t: "closed" });
+    if (p.ws) p.ws.ctx = null;
+  }
+  rooms.delete(room.code);
 }
 
 function joinRoom(ws, room, name, token) {
@@ -225,15 +229,10 @@ wss.on("connection", (ws, req) => {
         return removePlayer(room, target.id);
       }
 
-      case "makehost": {
-        if (!isHost || !room.players.has(m.id)) return;
-        room.host = m.id;
-        return broadcast(room);
-      }
-
       case "leave":
         ws.ctx = null;
         clearTimeout(player.dropTimer);
+        if (isHost) return closeRoom(room);
         return removePlayer(room, player.id);
     }
   });
@@ -245,8 +244,9 @@ wss.on("connection", (ws, req) => {
     const { room, player } = ctx;
     if (player.ws !== ws) return;
     player.ws = null;
-    // the host keeps the role during the grace period; it moves on only if they don't come back
     broadcast(room);
+    // the host stays in the room (offline) until they come back; others drop after the grace period
+    if (room.host === player.id) return;
     player.dropTimer = setTimeout(() => {
       if (!player.ws && room.players.get(player.id) === player) removePlayer(room, player.id);
     }, GRACE_MS);
