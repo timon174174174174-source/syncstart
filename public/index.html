@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Общий старт</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="256x256" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#0e1116">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel2: #1e232c; --line: #2a303b;
+    --text: #e8ecf2; --muted: #8b94a3; --accent: #f5a524; --ok: #3ecf8e;
+    --bad: #f0616d; --blue: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .5px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+  input, select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 12px; font: inherit; outline: none; }
+  input:focus, select:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .stack > * + * { margin-top: 8px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 14px; cursor: pointer;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #1a1205; border-color: transparent; }
+  .okb { background: var(--ok); color: #04150d; border-color: transparent; }
+  .danger { background: transparent; color: var(--bad); border-color: #4a2a30; }
+  .small { padding: 6px 9px; font-size: 13px; border-radius: 8px; }
+  .code { font: 700 30px/1 ui-monospace, Consolas, monospace; letter-spacing: 6px; color: var(--accent); }
+  .between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .muted { color: var(--muted); }
+  ul.players { list-style: none; margin: 0; padding: 0; }
+  ul.players li { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-top: 1px solid var(--line); }
+  ul.players li:first-child { border-top: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ready { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .pname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px; margin-left: 6px; vertical-align: 1px; }
+  .tag.host { background: #3a2c0c; color: var(--accent); }
+  .tag.you { background: #12283f; color: var(--blue); }
+  .tag.off { background: #2a2a2a; color: var(--muted); }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.ready { color: var(--ok); }
+  #countdown { position: fixed; inset: 0; background: rgba(8,10,14,.94); display: none;
+    flex-direction: column; align-items: center; justify-content: center; z-index: 10; text-align: center; padding: 16px; }
+  #countdown.show { display: flex; }
+  #cdNum { font: 800 min(42vw, 260px)/1 system-ui, sans-serif; color: var(--accent); font-variant-numeric: tabular-nums; }
+  #cdNum.go { color: var(--ok); }
+  #cdInfo { color: var(--muted); margin-top: 12px; min-height: 1.4em; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2b1a1d;
+    color: #ffd2d6; border: 1px solid #5b2b33; padding: 10px 14px; border-radius: 10px; display: none; z-index: 20; max-width: 92vw; }
+  .toast.info { background: #13241c; color: #c9f5df; border-color: #245a40; }
+  .conn { font-size: 12px; color: var(--muted); }
+  .conn.bad { color: var(--bad); }
+  .hidden { display: none !important; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Общий <span>старт</span></h1>
+  <div class="sub">Одновременный отсчёт для кооперативных игр</div>
+
+  <!-- home -->
+  <div id="home">
+    <div class="card stack">
+      <h2>Ник</h2>
+      <input id="nick" maxlength="24" placeholder="Твой ник" autocomplete="off">
+    </div>
+    <div class="card stack">
+      <h2>Новая комната</h2>
+      <button class="primary" id="btnCreate" style="width:100%">Создать комнату</button>
+    </div>
+    <div class="card stack">
+      <h2>Войти в комнату</h2>
+      <div class="row">
+        <input id="joinCode" maxlength="5" placeholder="Код" autocomplete="off" style="text-transform:uppercase;letter-spacing:3px">
+        <button id="btnJoin" style="flex:0 0 auto">Войти</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- room -->
+  <div id="room" class="hidden">
+    <div class="card">
+      <div class="between">
+        <div>
+          <div class="muted" style="font-size:13px">Код комнаты</div>
+          <div class="code" id="roomCode">-----</div>
+        </div>
+        <div class="stack" style="text-align:right">
+          <button class="small" id="btnCopy">Скопировать ссылку</button>
+          <div class="conn" id="conn">подключено</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="between" style="margin-bottom:8px">
+        <h2 style="margin:0">Участники <span id="cnt" class="muted"></span></h2>
+        <button class="small" id="btnSound">🔊 Проверить звук</button>
+      </div>
+      <ul class="players" id="players"></ul>
+    </div>
+
+    <div class="card stack">
+      <button class="okb" id="btnReady" style="width:100%;padding:14px">Я готов</button>
+      <div id="hostBox" class="stack hidden">
+        <div class="row">
+          <select id="secs">
+            <option value="3">Отсчёт 3 сек</option>
+            <option value="5">Отсчёт 5 сек</option>
+            <option value="10" selected>Отсчёт 10 сек</option>
+            <option value="15">Отсчёт 15 сек</option>
+          </select>
+          <button class="primary" id="btnStart">Старт</button>
+        </div>
+        <button id="btnForce" class="hidden" style="width:100%">Старт без ожидания всех</button>
+      </div>
+      <div id="waitHost" class="muted" style="text-align:center;font-size:13px">Отсчёт запускает хост</div>
+    </div>
+
+    <button class="danger" id="btnLeave" style="width:100%">Выйти из комнаты</button>
+  </div>
+
+  <footer>Комнаты хранятся в памяти и пропадают при перезапуске сервера</footer>
+</div>
+
+<div id="countdown">
+  <div id="cdNum">10</div>
+  <div id="cdInfo"></div>
+  <button class="danger hidden" id="btnCancel" style="margin-top:24px">Отменить</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  let token = store.get("ss_token");
+  if (!/^[a-f0-9]{32}$/.test(token || "")) {
+    const a = new Uint8Array(16); crypto.getRandomValues(a);
+    token = [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+    store.set("ss_token", token);
+  }
+  $("nick").value = store.get("ss_nick") || "";
+
+  let ws, me = null, room = null, wantRoom = null, retry = 0;
+  let offset = 0, bestRtt = Infinity; // serverTime ≈ Date.now() + offset
+
+  // ---------- sound ----------
+  let ac = null;
+  function audio() {
+    if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (C) ac = new C(); }
+    if (ac && ac.state === "suspended") ac.resume();
+    return ac;
+  }
+  function beep(freq = 880, dur = 0.12, vol = 0.25) {
+    const a = audio(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = freq; o.type = "sine";
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + dur);
+  }
+  document.addEventListener("pointerdown", audio, { once: true });
+
+  // ---------- ui helpers ----------
+  let toastT;
+  function toast(msg, info) {
+    const t = $("toast"); t.textContent = msg; t.className = "toast" + (info ? " info" : "");
+    t.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => (t.style.display = "none"), 3500);
+  }
+  function nick() {
+    const n = $("nick").value.trim().slice(0, 24);
+    if (n) store.set("ss_nick", n);
+    return n || "Игрок";
+  }
+  function show(view) {
+    $("home").classList.toggle("hidden", view !== "home");
+    $("room").classList.toggle("hidden", view !== "room");
+  }
+
+  // ---------- socket ----------
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.onopen = () => {
+      retry = 0; $("conn").textContent = "подключено"; $("conn").className = "conn";
+      bestRtt = Infinity; for (let i = 0; i < 5; i++) setTimeout(ping, i * 250);
+      if (wantRoom) ws.send(JSON.stringify({ t: "join", code: wantRoom, name: nick(), token }));
+    };
+    ws.onclose = () => {
+      $("conn").textContent = "переподключение…"; $("conn").className = "conn bad";
+      setTimeout(connect, Math.min(1000 * 2 ** retry++, 8000));
+    };
+    ws.onmessage = (e) => handle(JSON.parse(e.data));
+  }
+  function sendMsg(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ ...m, token })); }
+  function ping() { sendMsg({ t: "ping", c: Date.now() }); }
+  setInterval(ping, 10000);
+
+  function handle(m) {
+    switch (m.t) {
+      case "pong": {
+        const t1 = Date.now(), rtt = t1 - m.c;
+        if (rtt <= bestRtt) { bestRtt = rtt; offset = m.s - (m.c + rtt / 2); }
+        break;
+      }
+      case "joined":
+        me = m.you; wantRoom = m.code; store.set("ss_room", m.code);
+        history.replaceState(null, "", "?r=" + m.code);
+        show("room");
+        break;
+      case "state":
+        room = m.room; render(); break;
+      case "error":
+        toast(m.msg);
+        if (!room) { wantRoom = null; store.del("ss_room"); }
+        break;
+      case "kicked":
+        leaveLocal(); toast("Хост исключил тебя из комнаты"); break;
+      case "replaced":
+        wantRoom = null; toast("Ты открыл комнату в другой вкладке"); break;
+    }
+  }
+
+  function leaveLocal() {
+    wantRoom = null; room = null; me = null; store.del("ss_room");
+    history.replaceState(null, "", location.pathname);
+    stopCountdown(); show("home");
+  }
+
+  // ---------- render ----------
+  function render() {
+    if (!room) return;
+    const isHost = room.host === me;
+    const players = room.players;
+    const allReady = players.length > 0 && players.every((p) => p.ready);
+    const meP = players.find((p) => p.id === me);
+
+    $("roomCode").textContent = room.code;
+    $("cnt").textContent = `· ${players.filter((p) => p.ready).length}/${players.length} готовы`;
+
+    const ul = $("players"); ul.innerHTML = "";
+    for (const p of players) {
+      const li = document.createElement("li");
+      const dot = document.createElement("span"); dot.className = "dot" + (p.ready ? " ready" : "");
+      const name = document.createElement("span"); name.className = "pname"; name.textContent = p.name;
+      if (p.id === room.host) name.insertAdjacentHTML("beforeend", '<span class="tag host">ХОСТ</span>');
+      if (p.id === me) name.insertAdjacentHTML("beforeend", '<span class="tag you">ТЫ</span>');
+      if (!p.online) name.insertAdjacentHTML("beforeend", '<span class="tag off">НЕТ СВЯЗИ</span>');
+      const st = document.createElement("span"); st.className = "status" + (p.ready ? " ready" : "");
+      st.textContent = p.ready ? "готов" : "не готов";
+      li.append(dot, name, st);
+      if (isHost && p.id !== me) {
+        const mk = document.createElement("button"); mk.className = "small"; mk.title = "Сделать хостом"; mk.textContent = "★";
+        mk.onclick = () => sendMsg({ t: "makehost", id: p.id });
+        const kick = document.createElement("button"); kick.className = "small danger"; kick.title = "Исключить"; kick.textContent = "✕";
+        kick.onclick = () => { if (confirm(`Исключить ${p.name}?`)) sendMsg({ t: "kick", id: p.id }); };
+        li.append(mk, kick);
+      }
+      ul.append(li);
+    }
+
+    const ready = !!(meP && meP.ready);
+    $("btnReady").textContent = ready ? "Не готов" : "Я готов";
+    $("btnReady").className = ready ? "" : "okb";
+    $("btnReady").disabled = !!room.countdown;
+
+    $("hostBox").classList.toggle("hidden", !isHost);
+    $("waitHost").classList.toggle("hidden", isHost);
+    $("secs").value = String(room.seconds);
+    $("secs").disabled = !!room.countdown;
+    $("btnStart").disabled = !allReady || !!room.countdown;
+    $("btnForce").classList.toggle("hidden", allReady || !!room.countdown);
+    $("btnCancel").classList.toggle("hidden", !isHost);
+
+    if (room.countdown) startCountdown(room.countdown); else stopCountdown();
+  }
+
+  // ---------- countdown ----------
+  let cdRaf = null, cdKey = null, lastSec = null;
+  function startCountdown(cd) {
+    const key = cd.startAt;
+    if (cdKey === key) return;
+    cdKey = key; lastSec = null;
+    $("countdown").classList.add("show");
+    $("cdInfo").textContent = cd.forced ? `${cd.by} запустил(а), не дожидаясь всех` : "";
+    const tick = () => {
+      const left = cd.startAt - (Date.now() + offset);
+      const el = $("cdNum");
+      if (left > 0) {
+        const s = Math.ceil(left / 1000);
+        el.textContent = s; el.className = "";
+        if (s !== lastSec) { lastSec = s; if (s <= 3) beep(660, 0.12); }
+        cdRaf = requestAnimationFrame(tick);
+      } else {
+        el.textContent = "GO!"; el.className = "go";
+        if (lastSec !== 0) { lastSec = 0; beep(1320, 0.45, 0.35); $("cdInfo").textContent = "Удачи!"; }
+      }
+    };
+    cancelAnimationFrame(cdRaf); tick();
+  }
+  function stopCountdown() {
+    cancelAnimationFrame(cdRaf); cdKey = null;
+    $("countdown").classList.remove("show");
+  }
+
+  // ---------- actions ----------
+  $("btnCreate").onclick = () => { audio(); sendMsg({ t: "create", name: nick() }); };
+  $("btnJoin").onclick = () => {
+    audio();
+    const code = $("joinCode").value.trim().toUpperCase();
+    if (code.length !== 5) return toast("Код — 5 символов");
+    wantRoom = code; sendMsg({ t: "join", code, name: nick() });
+  };
+  $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnJoin").click(); });
+  $("nick").addEventListener("change", () => { if (room) sendMsg({ t: "rename", name: nick() }); });
+  $("btnReady").onclick = () => {
+    audio();
+    const meP = room && room.players.find((p) => p.id === me);
+    sendMsg({ t: "ready", v: !(meP && meP.ready) });
+  };
+  $("btnStart").onclick = () => sendMsg({ t: "start" });
+  $("btnForce").onclick = () => {
+    const notReady = room.players.filter((p) => !p.ready).map((p) => p.name);
+    if (confirm(`Не готовы: ${notReady.join(", ")}.\nЗапустить отсчёт всё равно?`)) sendMsg({ t: "start", force: true });
+  };
+  $("btnCancel").onclick = () => sendMsg({ t: "cancel" });
+  $("secs").onchange = () => sendMsg({ t: "seconds", v: Number($("secs").value) });
+  $("btnLeave").onclick = () => { sendMsg({ t: "leave" }); leaveLocal(); };
+  $("btnSound").onclick = () => { beep(660, 0.12); setTimeout(() => beep(1320, 0.4, 0.35), 350); };
+  $("btnCopy").onclick = async () => {
+    const url = `${location.origin}${location.pathname}?r=${room.code}`;
+    try { await navigator.clipboard.writeText(url); toast("Ссылка скопирована", true); }
+    catch { prompt("Скопируй ссылку:", url); }
+  };
+
+  // ---------- start ----------
+  const fromUrl = new URLSearchParams(location.search).get("r");
+  const initial = (fromUrl || store.get("ss_room") || "").toUpperCase();
+  if (/^[A-Z0-9]{5}$/.test(initial)) { wantRoom = initial; $("joinCode").value = initial; }
+  connect();
+})();
+</script>
+</body>
+</html>
