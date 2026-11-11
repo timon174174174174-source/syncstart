@@ -8,7 +8,7 @@ const { WebSocketServer } = require("ws");
 
 const PORT = Number(process.env.PORT) || 8080;
 const MAX_ROOMS = 500;
-const MAX_PLAYERS = 16;
+const MAX_PLAYERS = 100;
 const GRACE_MS = Number(process.env.GRACE_MS) || 30_000; // keep a disconnected player this long
 const ROOM_IDLE_MS = 6 * 3600_000;
 const COUNTDOWNS = [3, 5, 10, 15];
