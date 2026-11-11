@@ -75,10 +75,18 @@ function publicState(room) {
   };
 }
 
+// Changes within BATCH_MS are merged into one update, so 100 people pressing
+// "ready" at once cost one broadcast instead of a hundred.
+const BATCH_MS = 50;
 function broadcast(room) {
   room.touched = now();
-  const st = { t: "state", room: publicState(room) };
-  for (const p of room.players.values()) send(p.ws, st);
+  if (room.bcastTimer) return;
+  room.bcastTimer = setTimeout(() => {
+    room.bcastTimer = null;
+    if (!rooms.has(room.code)) return;
+    const st = JSON.stringify({ t: "state", room: publicState(room) });
+    for (const p of room.players.values()) if (p.ws && p.ws.readyState === 1) p.ws.send(st);
+  }, BATCH_MS);
 }
 
 // The creator is the host for the whole life of the room; the role never moves.
