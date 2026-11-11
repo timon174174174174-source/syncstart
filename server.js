@@ -14,14 +14,86 @@ const ROOM_IDLE_MS = 6 * 3600_000;
 const COUNTDOWNS = [3, 5, 10, 15];
 
 const INDEX = fs.readFileSync(path.join(__dirname, "public", "index.html"));
+const ADMIN_HTML = fs.readFileSync(path.join(__dirname, "public", "admin.html"));
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || ""; // admin panel is off when empty
+const STARTED = Date.now();
 const ICONS = {
   "/icon.png": fs.readFileSync(path.join(__dirname, "public", "icon.png")),
   "/favicon-32.png": fs.readFileSync(path.join(__dirname, "public", "favicon-32.png")),
 };
 ICONS["/favicon.ico"] = ICONS["/favicon-32.png"];
 
+// ---------- admin ----------
+let adminFails = [];
+function adminAuthorized(req) {
+  if (!ADMIN_PASSWORD) return false;
+  adminFails = adminFails.filter((t) => Date.now() - t < 10 * 60_000);
+  if (adminFails.length >= 10) return false; // too many wrong passwords: locked for a while
+  const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
+  const pass = m ? Buffer.from(m[1], "base64").toString().split(":").slice(1).join(":") : "";
+  const a = crypto.createHash("sha256").update(pass).digest();
+  const b = crypto.createHash("sha256").update(ADMIN_PASSWORD).digest();
+  const ok = crypto.timingSafeEqual(a, b);
+  if (!ok && m) adminFails.push(Date.now());
+  return ok;
+}
+
+function adminSnapshot() {
+  const list = [...rooms.values()].map((r) => {
+    const players = [...r.players.values()];
+    const host = r.players.get(r.host);
+    return {
+      code: r.code,
+      createdAt: r.createdAt,
+      touched: r.touched,
+      host: host ? { name: host.name, online: !!host.ws } : null,
+      total: players.length,
+      online: players.filter((p) => p.ws).length,
+      ready: players.filter((p) => p.ready).length,
+      banned: r.banned.size,
+      countdown: r.countdown,
+      seconds: r.seconds,
+      players: players.map((p) => ({ name: p.name, ready: p.ready, online: !!p.ws, host: p.id === r.host })),
+    };
+  });
+  list.sort((a, b) => b.touched - a.touched);
+  return {
+    now: Date.now(),
+    startedAt: STARTED,
+    connections: wss.clients.size,
+    memoryMB: Math.round(process.memoryUsage().rss / 1048576),
+    rooms: list,
+  };
+}
+
+function handleAdmin(req, res) {
+  if (!ADMIN_PASSWORD) {
+    res.writeHead(404);
+    return res.end("not found");
+  }
+  if (!adminAuthorized(req)) {
+    res.writeHead(401, { "WWW-Authenticate": 'Basic realm="admin", charset="UTF-8"', "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("Нужен пароль");
+  }
+  const sec = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" };
+  const url = new URL(req.url, "http://x");
+  if (url.pathname === "/admin/api/rooms" && req.method === "GET") {
+    res.writeHead(200, { ...sec, "Content-Type": "application/json; charset=utf-8" });
+    return res.end(JSON.stringify(adminSnapshot()));
+  }
+  if (url.pathname === "/admin/api/close" && req.method === "POST") {
+    const room = rooms.get(String(url.searchParams.get("code") || "").toUpperCase());
+    if (room) closeRoom(room);
+    res.writeHead(room ? 200 : 404, { ...sec, "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ ok: !!room }));
+  }
+  res.writeHead(200, { ...sec, "Content-Type": "text/html; charset=utf-8" });
+  res.end(ADMIN_HTML);
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/health") return res.end("ok");
+  if (req.url === "/admin" || req.url.startsWith("/admin/") || req.url.startsWith("/admin?")) return handleAdmin(req, res);
   const icon = ICONS[req.url.split("?")[0]];
   if (icon) {
     res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" });
@@ -53,7 +125,7 @@ function newCode() {
 
 function cleanName(s) {
   s = String(s ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 24);
-  return s || "Игрок";
+  return s; // empty means "no name" — callers reject it
 }
 
 function send(ws, msg) {
@@ -164,8 +236,11 @@ wss.on("connection", (ws, req) => {
 
     const token = typeof m.token === "string" && /^[a-f0-9]{32}$/.test(m.token) ? m.token : null;
 
+    const NO_NAME = { t: "error", msg: "Введи ник", field: "nick" };
+
     if (m.t === "create") {
       if (!token) return;
+      if (!cleanName(m.name)) return send(ws, NO_NAME);
       if (rooms.size >= MAX_ROOMS) return send(ws, { t: "error", msg: "Сервер переполнен, попробуй позже" });
       const room = {
         code: newCode(),
@@ -176,6 +251,7 @@ wss.on("connection", (ws, req) => {
         players: new Map(),
         banned: new Set(),
         touched: now(),
+        createdAt: now(),
       };
       rooms.set(room.code, room);
       return joinRoom(ws, room, cleanName(m.name), token);
@@ -185,6 +261,7 @@ wss.on("connection", (ws, req) => {
       if (!token) return;
       const room = rooms.get(String(m.code || "").toUpperCase().trim());
       if (!room) return send(ws, { t: "error", msg: "Комната не найдена" });
+      if (!cleanName(m.name)) return send(ws, NO_NAME);
       return joinRoom(ws, room, cleanName(m.name), token);
     }
 
@@ -200,6 +277,7 @@ wss.on("connection", (ws, req) => {
         return broadcast(room);
 
       case "rename":
+        if (!cleanName(m.name)) return;
         player.name = cleanName(m.name);
         return broadcast(room);
 

@@ -26,6 +26,7 @@
   input, select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
     border-radius: 10px; padding: 11px 12px; font: inherit; outline: none; }
   input:focus, select:focus { border-color: var(--accent); }
+  input.err { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(240, 97, 109, .2); }
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
   .stack > * + * { margin-top: 8px; }
@@ -190,8 +191,16 @@
   function nick() {
     const n = $("nick").value.trim().slice(0, 24);
     if (n) store.set("ss_nick", n);
-    return n || "Игрок";
+    return n;
   }
+  function needNick() {
+    if (nick()) return false;
+    show("home");
+    const el = $("nick"); el.classList.add("err"); el.focus();
+    toast("Сначала введи ник");
+    return true;
+  }
+  $("nick").addEventListener("input", () => $("nick").classList.remove("err"));
   function show(view) {
     $("home").classList.toggle("hidden", view !== "home");
     $("room").classList.toggle("hidden", view !== "room");
@@ -204,7 +213,7 @@
     ws.onopen = () => {
       retry = 0; $("conn").textContent = "подключено"; $("conn").className = "conn";
       bestRtt = Infinity; for (let i = 0; i < 5; i++) setTimeout(ping, i * 250);
-      if (wantRoom) ws.send(JSON.stringify({ t: "join", code: wantRoom, name: nick(), token }));
+      if (wantRoom && nick()) ws.send(JSON.stringify({ t: "join", code: wantRoom, name: nick(), token }));
     };
     ws.onclose = () => {
       $("conn").textContent = "переподключение…"; $("conn").className = "conn bad";
@@ -231,6 +240,7 @@
       case "state":
         room = m.room; render(); break;
       case "error":
+        if (m.field === "nick") { needNick(); break; }
         toast(m.msg);
         if (!room) { wantRoom = null; store.del("ss_room"); }
         break;
@@ -331,15 +341,16 @@
   }
 
   // ---------- actions ----------
-  $("btnCreate").onclick = () => { audio(); sendMsg({ t: "create", name: nick() }); };
+  $("btnCreate").onclick = () => { audio(); if (needNick()) return; sendMsg({ t: "create", name: nick() }); };
   $("btnJoin").onclick = () => {
     audio();
+    if (needNick()) return;
     const code = $("joinCode").value.trim().toUpperCase();
     if (code.length !== 5) return toast("Код — 5 символов");
     wantRoom = code; sendMsg({ t: "join", code, name: nick() });
   };
   $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnJoin").click(); });
-  $("nick").addEventListener("change", () => { if (room) sendMsg({ t: "rename", name: nick() }); });
+  $("nick").addEventListener("change", () => { if (room && nick()) sendMsg({ t: "rename", name: nick() }); });
   $("btnReady").onclick = () => {
     audio();
     const meP = room && room.players.find((p) => p.id === me);
@@ -366,7 +377,11 @@
   // ---------- start ----------
   const fromUrl = new URLSearchParams(location.search).get("r");
   const initial = (fromUrl || store.get("ss_room") || "").toUpperCase();
-  if (/^[A-Z0-9]{5}$/.test(initial)) { wantRoom = initial; $("joinCode").value = initial; }
+  if (/^[A-Z0-9]{5}$/.test(initial)) {
+    $("joinCode").value = initial;
+    if (nick()) wantRoom = initial;   // with a saved nick, rejoin automatically
+    else $("nick").focus();           // otherwise ask for a nick first, then "Войти"
+  }
   connect();
 })();
 </script>
