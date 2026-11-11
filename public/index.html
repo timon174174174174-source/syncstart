@@ -79,7 +79,7 @@
       <h2>Ник</h2>
       <input id="nick" maxlength="24" placeholder="Твой ник" autocomplete="off">
     </div>
-    <div class="card stack">
+    <div class="card stack" id="createCard">
       <h2>Новая комната</h2>
       <button class="primary" id="btnCreate" style="width:100%">Создать комнату</button>
     </div>
@@ -242,7 +242,11 @@
       case "error":
         if (m.field === "nick") { needNick(); break; }
         toast(m.msg);
-        if (!room) { wantRoom = null; store.del("ss_room"); }
+        if (!room) {
+          wantRoom = null; store.del("ss_room");
+          // the invite led nowhere (room gone / banned): drop ?r= so "create room" comes back
+          history.replaceState(null, "", location.pathname); updateCreateCard();
+        }
         break;
       case "kicked":
         leaveLocal(); toast(m.ban ? "Хост забанил тебя в этой комнате" : "Хост кикнул тебя из комнаты"); break;
@@ -256,7 +260,13 @@
   function leaveLocal() {
     wantRoom = null; room = null; me = null; store.del("ss_room");
     history.replaceState(null, "", location.pathname);
-    stopCountdown(); show("home");
+    stopCountdown(); show("home"); updateCreateCard();
+  }
+
+  // Came in by an invite link (?r=CODE): only joining makes sense, hide "create room"
+  function updateCreateCard() {
+    const invited = /^[A-Za-z0-9]{5}$/.test(new URLSearchParams(location.search).get("r") || "");
+    $("createCard").classList.toggle("hidden", invited);
   }
 
   // ---------- render ----------
@@ -382,6 +392,7 @@
     if (nick()) wantRoom = initial;   // with a saved nick, rejoin automatically
     else $("nick").focus();           // otherwise ask for a nick first, then "Войти"
   }
+  updateCreateCard();
   connect();
 })();
 </script>
