@@ -129,7 +129,6 @@
           </select>
           <button class="primary" id="btnStart">Старт</button>
         </div>
-        <button id="btnForce" class="hidden" style="width:100%">Старт без ожидания всех</button>
       </div>
       <div id="waitHost" class="muted" style="text-align:center;font-size:13px">Отсчёт запускает хост</div>
     </div>
@@ -322,8 +321,7 @@
       : "Отсчёт запускает хост";
     $("secs").value = String(room.seconds);
     $("secs").disabled = !!room.countdown;
-    $("btnStart").disabled = !allReady || !!room.countdown;
-    $("btnForce").classList.toggle("hidden", allReady || !!room.countdown);
+    $("btnStart").disabled = !!room.countdown;
     $("btnCancel").classList.toggle("hidden", !isHost);
     $("btnLeave").textContent = isHost ? "Закрыть комнату" : "Выйти из комнаты";
 
@@ -375,10 +373,6 @@
     sendMsg({ t: "ready", v: !(meP && meP.ready) });
   };
   $("btnStart").onclick = () => sendMsg({ t: "start" });
-  $("btnForce").onclick = () => {
-    const notReady = room.players.filter((p) => !p.ready).map((p) => p.name);
-    if (confirm(`Не готовы: ${notReady.join(", ")}.\nЗапустить отсчёт всё равно?`)) sendMsg({ t: "start", force: true });
-  };
   $("btnCancel").onclick = () => sendMsg({ t: "cancel" });
   $("secs").onchange = () => sendMsg({ t: "seconds", v: Number($("secs").value) });
   $("btnLeave").onclick = () => {

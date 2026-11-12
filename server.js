@@ -303,8 +303,8 @@ wss.on("connection", (ws, req) => {
 
       case "start": {
         if (!isHost || room.countdown) return;
+        // the host can start at any time; "forced" just tells others not everyone was ready
         const allReady = [...room.players.values()].every((p) => p.ready);
-        if (!allReady && !m.force) return send(ws, { t: "error", msg: "Не все готовы" });
         room.countdown = { startAt: now() + room.seconds * 1000 + 300, by: player.name, forced: !allReady };
         finishCountdownLater(room);
         return broadcast(room);
