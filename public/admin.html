@@ -108,7 +108,7 @@
       const hostSt = r.host
         ? `<span class="pill ${r.host.online ? "ok" : "off"}">${r.host.online ? "хост на связи" : "хост офлайн"}</span>` : "";
       const players = r.players.map((p) =>
-        `<span class="p ${p.ready ? "ready" : ""} ${p.online ? "" : "offline"}"><span class="d"></span>${esc(p.name)}${p.host ? " ★" : ""}</span>`).join("");
+        `<span class="p ${p.ready ? "ready" : ""} ${p.online ? "" : "offline"}"><span class="d"></span>${esc(p.name)}${p.host ? " ★" : ""}${p.online && p.ping != null ? ` <span class="muted">${p.ping} мс</span>` : ""}</span>`).join("");
       return `<div class="room ${open.has(r.code) ? "open" : ""}" data-code="${r.code}">
         <div class="head">
           <div class="code">${r.code}</div>

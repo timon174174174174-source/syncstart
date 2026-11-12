@@ -1,5 +1,6 @@
 // Sync Start — synchronized countdown rooms for co-op games.
-// Rooms live in memory; they disappear when the server restarts.
+// Rooms live in memory and are saved to DATA_FILE on shutdown, so a restart
+// (e.g. a deploy) keeps them: clients reconnect with their tokens and carry on.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -12,6 +13,8 @@ const MAX_PLAYERS = 100;
 const GRACE_MS = Number(process.env.GRACE_MS) || 30_000; // keep a disconnected player this long
 const ROOM_IDLE_MS = 6 * 3600_000;
 const COUNTDOWNS = [3, 5, 10, 15];
+const DATA_FILE = process.env.DATA_FILE || ""; // where rooms are saved between restarts
+const PING_EVERY_MS = 5_000;
 
 const INDEX = fs.readFileSync(path.join(__dirname, "public", "index.html"));
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, "public", "admin.html"));
@@ -53,7 +56,7 @@ function adminSnapshot() {
       banned: r.banned.size,
       countdown: r.countdown,
       seconds: r.seconds,
-      players: players.map((p) => ({ name: p.name, ready: p.ready, online: !!p.ws, host: p.id === r.host })),
+      players: players.map((p) => ({ name: p.name, ready: p.ready, online: !!p.ws, host: p.id === r.host, ping: p.ws ? p.ws.rtt ?? null : null })),
     };
   });
   list.sort((a, b) => b.touched - a.touched);
@@ -143,6 +146,7 @@ function publicState(room) {
       name: p.name,
       ready: p.ready,
       online: !!p.ws,
+      ping: p.ws ? p.ws.rtt ?? null : null,
     })),
   };
 }
@@ -216,7 +220,18 @@ function finishCountdownLater(room) {
 wss.on("connection", (ws, req) => {
   ws.ctx = null;
   ws.isAlive = true;
-  ws.on("pong", () => (ws.isAlive = true));
+  ws.rtt = null;
+  ws.missed = 0;
+  ws.on("pong", () => {
+    ws.missed = 0;
+    if (!ws.pingSentAt) return;
+    const rtt = Date.now() - ws.pingSentAt;
+    ws.pingSentAt = 0;
+    const old = ws.rtt;
+    ws.rtt = old == null ? rtt : Math.round(old * 0.6 + rtt * 0.4); // smoothed
+    // re-broadcast only when the shown value changes noticeably
+    if (ws.ctx && (old == null || Math.abs(ws.rtt - old) >= Math.max(10, old * 0.25))) broadcast(ws.ctx.room);
+  });
 
   // simple flood protection
   let bucket = 20;
@@ -339,19 +354,99 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// heartbeat + idle room cleanup
+// ping every client (measures latency); drop connections silent for 3 pings
 setInterval(() => {
   for (const ws of wss.clients) {
-    if (!ws.isAlive) {
+    if (ws.pingSentAt && ++ws.missed >= 3) {
       ws.terminate();
       continue;
     }
-    ws.isAlive = false;
+    if (!ws.pingSentAt) ws.pingSentAt = Date.now();
     ws.ping();
   }
+}, PING_EVERY_MS);
+
+// idle room cleanup
+setInterval(() => {
   for (const room of rooms.values()) {
     if (now() - room.touched > ROOM_IDLE_MS) rooms.delete(room.code);
   }
-}, 15_000);
+}, 60_000);
+
+// ---------- save / restore rooms across restarts ----------
+function saveRooms() {
+  if (!DATA_FILE) return;
+  const data = {
+    savedAt: now(),
+    rooms: [...rooms.values()].map((r) => ({
+      code: r.code,
+      host: r.host,
+      seconds: r.seconds,
+      countdown: r.countdown,
+      createdAt: r.createdAt,
+      touched: r.touched,
+      banned: [...r.banned],
+      players: [...r.players.values()].map((p) => ({ id: p.id, token: p.token, name: p.name, ready: p.ready })),
+    })),
+  };
+  const tmp = DATA_FILE + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data));
+  fs.renameSync(tmp, DATA_FILE);
+  return data.rooms.length;
+}
+
+function restoreRooms() {
+  if (!DATA_FILE || !fs.existsSync(DATA_FILE)) return 0;
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  } catch (e) {
+    console.error("cannot read saved rooms:", e.message);
+    return 0;
+  }
+  for (const r of data.rooms || []) {
+    if (now() - (r.touched || 0) > ROOM_IDLE_MS) continue;
+    const room = {
+      code: r.code,
+      host: r.host,
+      seconds: COUNTDOWNS.includes(r.seconds) ? r.seconds : 10,
+      countdown: r.countdown && r.countdown.startAt > now() ? r.countdown : null,
+      cdTimer: null,
+      players: new Map(),
+      banned: new Set(r.banned || []),
+      touched: r.touched || now(),
+      createdAt: r.createdAt || now(),
+    };
+    for (const p of r.players || []) {
+      const player = { id: p.id, token: p.token, name: p.name, ready: !!p.ready, ws: null, dropTimer: null };
+      room.players.set(player.id, player);
+      // everyone starts offline; regular players get the usual grace period to reconnect
+      if (player.id !== room.host) {
+        player.dropTimer = setTimeout(() => {
+          if (!player.ws && room.players.get(player.id) === player) removePlayer(room, player.id);
+        }, GRACE_MS);
+      }
+    }
+    if (!room.players.size) continue;
+    rooms.set(room.code, room);
+    if (room.countdown) finishCountdownLater(room);
+  }
+  fs.renameSync(DATA_FILE, DATA_FILE + ".restored");
+  return rooms.size;
+}
+
+function shutdown(sig) {
+  try {
+    const n = saveRooms();
+    if (n != null) console.log(`${sig}: saved ${n} room(s)`);
+  } catch (e) {
+    console.error("save failed:", e.message);
+  }
+  process.exit(0);
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+console.log(`restored ${restoreRooms()} room(s)`);
 
 server.listen(PORT, () => console.log(`Sync Start listening on :${PORT}`));
