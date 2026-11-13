@@ -474,6 +474,9 @@
       if (r.ok) apply((await r.json()).videoId || null);
     } catch {}
   }
+  // ?chat=VIDEO_ID shows that stream's chat regardless of the channel (for testing)
+  const forced = new URLSearchParams(location.search).get("chat");
+  if (/^[\w-]{11}$/.test(forced || "")) return apply(forced);
   poll();
   setInterval(poll, 60_000);
 })();
