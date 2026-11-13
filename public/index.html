@@ -68,6 +68,29 @@
   .conn.bad { color: var(--bad); }
   .hidden { display: none !important; }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
+
+  /* YouTube live chat: right column on wide screens, bottom sheet on phones */
+  #chat { position: fixed; z-index: 5; background: var(--panel); display: none; flex-direction: column;
+    left: 0; right: 0; bottom: 0; height: 70vh; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 30px rgba(0,0,0,.5); overflow: hidden; }
+  body.chat-open #chat { display: flex; }
+  .chat-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); }
+  .chat-head b { flex: 1; font-size: 14px; }
+  .chat-head a, .chat-foot a { color: var(--blue); text-decoration: none; font-size: 13px; }
+  .chat-head a:hover, .chat-foot a:hover { text-decoration: underline; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b;
+    margin-right: 7px; vertical-align: 1px; animation: blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  #chatFrame { flex: 1; width: 100%; border: 0; background: #0f0f0f; }
+  .chat-foot { font-size: 12px; color: var(--muted); padding: 6px 12px; border-top: 1px solid var(--line); }
+  #chatFab { position: fixed; z-index: 5; right: 16px; bottom: 16px; display: none;
+    background: var(--panel2); box-shadow: 0 4px 18px rgba(0,0,0,.45); border-radius: 999px; padding: 10px 16px; }
+  body.live:not(.chat-open) #chatFab { display: block; }
+  @media (min-width: 1000px) {
+    #chat { left: auto; top: 0; height: auto; width: 380px; border-top: 0; border-left: 1px solid var(--line);
+      border-radius: 0; box-shadow: none; }
+    body.chat-open { padding-right: 380px; }
+  }
 </style>
 </head>
 <body>
@@ -136,7 +159,7 @@
     <button class="danger" id="btnLeave" style="width:100%">Выйти из комнаты</button>
   </div>
 
-  <footer>Комнаты хранятся в памяти и пропадают при перезапуске сервера</footer>
+  <footer>Комнаты сохраняются при перезапуске сервера</footer>
 </div>
 
 <div id="countdown">
@@ -145,6 +168,17 @@
   <button class="danger hidden" id="btnCancel" style="margin-top:24px">Отменить</button>
 </div>
 <div class="toast" id="toast"></div>
+
+<aside id="chat" aria-label="Чат стрима">
+  <div class="chat-head">
+    <b><span class="live-dot"></span>Чат стрима</b>
+    <a id="chatWatch" target="_blank" rel="noopener">Смотреть стрим ↗</a>
+    <button class="small" id="chatHide" title="Скрыть чат">✕</button>
+  </div>
+  <iframe id="chatFrame" title="Чат стрима на YouTube" referrerpolicy="origin"></iframe>
+  <div class="chat-foot">Писать можно, если вошёл в YouTube. Не получается — <a id="chatPopout" target="_blank" rel="noopener">открой чат в отдельном окне</a></div>
+</aside>
+<button id="chatFab"><span class="live-dot"></span>Чат стрима</button>
 
 <script>
 (() => {
@@ -396,6 +430,52 @@
   }
   updateCreateCard();
   connect();
+})();
+
+// ---------- YouTube live chat ----------
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const wide = window.matchMedia("(min-width: 1000px)");
+  const prefKey = "ss_chat_hidden";
+  const getPref = () => { try { return localStorage.getItem(prefKey) === "1"; } catch { return false; } };
+  const setPref = (v) => { try { v ? localStorage.setItem(prefKey, "1") : localStorage.removeItem(prefKey); } catch {} };
+  let videoId = null;
+  let loaded = null; // video whose chat is in the iframe
+
+  function setOpen(open) {
+    document.body.classList.toggle("chat-open", open && !!videoId);
+    if (open && videoId && loaded !== videoId) {
+      loaded = videoId;
+      $("chatFrame").src = `https://www.youtube.com/live_chat?v=${videoId}&embed_domain=${encodeURIComponent(location.hostname)}&dark_theme=1`;
+    }
+  }
+
+  function apply(id) {
+    if (id === videoId) return;
+    videoId = id;
+    document.body.classList.toggle("live", !!id);
+    if (!id) {
+      setOpen(false);
+      $("chatFrame").removeAttribute("src");
+      loaded = null;
+      return;
+    }
+    $("chatWatch").href = `https://www.youtube.com/watch?v=${id}`;
+    $("chatPopout").href = `https://www.youtube.com/live_chat?is_popout=1&v=${id}`;
+    setOpen(wide.matches && !getPref()); // on a phone the chat opens only by the button
+  }
+
+  $("chatFab").onclick = () => { setPref(false); setOpen(true); };
+  $("chatHide").onclick = () => { if (wide.matches) setPref(true); setOpen(false); };
+
+  async function poll() {
+    try {
+      const r = await fetch("/api/live", { cache: "no-store" });
+      if (r.ok) apply((await r.json()).videoId || null);
+    } catch {}
+  }
+  poll();
+  setInterval(poll, 60_000);
 })();
 </script>
 </body>

@@ -26,6 +26,47 @@ const ICONS = {
 };
 ICONS["/favicon.ico"] = ICONS["/favicon-32.png"];
 
+// ---------- YouTube live chat ----------
+// The channel's /live page points (canonical link) at the current stream while one is on air.
+// No API key needed. Empty YT_CHANNEL turns the feature off.
+const YT_CHANNEL = process.env.YT_CHANNEL ?? "UCFyXybb8JwZlBsbl9faj_aQ";
+const LIVE_CHECK_MS = 60_000;      // how often to check while someone has the site open
+const LIVE_IDLE_CHECK_MS = 600_000; // and while nobody does
+const live = { videoId: null, checkedAt: 0, askedAt: 0 };
+let liveChecking = false;
+
+async function checkLive() {
+  if (!YT_CHANNEL || liveChecking) return;
+  liveChecking = true;
+  try {
+    const r = await fetch(`https://www.youtube.com/channel/${encodeURIComponent(YT_CHANNEL)}/live`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        "Accept-Language": "en",
+        Cookie: "SOCS=CAI", // skip the EU consent page
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const html = await r.text();
+    const m = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})"/);
+    const videoId = m && /"isLive":true/.test(html) ? m[1] : null;
+    if (videoId !== live.videoId) console.log(videoId ? `stream is live: ${videoId}` : "stream ended");
+    live.videoId = videoId;
+    live.checkedAt = Date.now();
+  } catch (e) {
+    console.warn("live check failed:", e.message); // keep the last known state
+  } finally {
+    liveChecking = false;
+  }
+}
+if (YT_CHANNEL) {
+  checkLive();
+  setInterval(() => {
+    const idle = Date.now() - live.askedAt > 5 * 60_000;
+    if (!idle || Date.now() - live.checkedAt >= LIVE_IDLE_CHECK_MS) checkLive();
+  }, LIVE_CHECK_MS).unref();
+}
+
 // ---------- admin ----------
 let adminFails = [];
 function adminAuthorized(req) {
@@ -97,6 +138,11 @@ function handleAdmin(req, res) {
 const server = http.createServer((req, res) => {
   if (req.url === "/health") return res.end("ok");
   if (req.url === "/admin" || req.url.startsWith("/admin/") || req.url.startsWith("/admin?")) return handleAdmin(req, res);
+  if (req.url === "/api/live") {
+    live.askedAt = Date.now();
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ videoId: live.videoId }));
+  }
   const icon = ICONS[req.url.split("?")[0]];
   if (icon) {
     res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" });
