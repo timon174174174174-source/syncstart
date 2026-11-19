@@ -67,6 +67,29 @@
   .conn { font-size: 12px; color: var(--muted); }
   .conn.bad { color: var(--bad); }
   .hidden { display: none !important; }
+  /* "who's faster" mini-game */
+  .gscore { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .gscore span { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 13px; }
+  .gscore b { color: var(--accent); margin-left: 4px; }
+  #game { position: fixed; inset: 0; z-index: 9; display: none; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 16px; user-select: none; -webkit-user-select: none; touch-action: manipulation; cursor: pointer; }
+  #game.show { display: flex; }
+  #game.wait { background: #7a1620; }
+  #game.go { background: #128a4c; }
+  #game.res { background: rgba(8,10,14,.96); cursor: default; }
+  #gBig { font: 800 min(16vw, 110px)/1.05 system-ui, sans-serif; }
+  #game.res #gBig { font-size: min(10vw, 64px); overflow-wrap: anywhere; }
+  #gSmall { margin-top: 14px; font-size: 17px; opacity: .9; min-height: 1.4em; }
+  #gTable { margin-top: 18px; width: min(420px, 92vw); list-style: none; padding: 0; text-align: left; max-height: 50vh; overflow-y: auto; }
+  #gTable li { display: flex; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  #gTable li.me { background: #12283f; border-radius: 8px; }
+  #gTable .pl { width: 28px; color: var(--muted); }
+  #gTable .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #gTable .tm { font-variant-numeric: tabular-nums; }
+  #gTable li:first-child .tm { color: var(--ok); font-weight: 700; }
+  .tm.bad { color: var(--bad) !important; } .tm.none { color: var(--muted) !important; }
+  #gBtns { margin-top: 18px; display: none; gap: 8px; }
+  #game.res.final #gBtns { display: flex; }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
 
   /* stream chat: right column on wide screens, bottom sheet on phones */
@@ -174,6 +197,15 @@
       <div id="waitHost" class="muted" style="text-align:center;font-size:13px">Отсчёт запускает хост</div>
     </div>
 
+    <div class="card stack" id="gameCard">
+      <div class="between">
+        <h2 style="margin:0">Пока ждём: кто быстрее</h2>
+        <button class="primary small" id="btnGame">⚡ Сыграть</button>
+      </div>
+      <div class="muted" style="font-size:13px" id="gameInfo"></div>
+      <div class="gscore" id="gameScores"></div>
+    </div>
+
     <button class="danger" id="btnLeave" style="width:100%">Выйти из комнаты</button>
   </div>
 
@@ -186,6 +218,12 @@
   <button class="danger hidden" id="btnCancel" style="margin-top:24px">Отменить</button>
 </div>
 <div class="toast" id="toast"></div>
+<div id="game">
+  <div id="gBig"></div>
+  <div id="gSmall"></div>
+  <ul id="gTable"></ul>
+  <div id="gBtns"><button class="primary" id="gAgain">⚡ Ещё раунд</button><button id="gClose">Закрыть</button></div>
+</div>
 
 <aside id="chat" aria-label="Чат стрима">
   <div class="chat-head">
@@ -314,6 +352,8 @@
         leaveLocal(); toast(m.ban ? "Хост забанил тебя в этой комнате" : "Хост кикнул тебя из комнаты"); break;
       case "closed":
         leaveLocal(); toast("Хост закрыл комнату"); break;
+      case "game_go":
+        gameGo(m.round); break;
       case "replaced":
         wantRoom = null; toast("Ты открыл комнату в другой вкладке"); break;
     }
@@ -322,7 +362,7 @@
   function leaveLocal() {
     wantRoom = null; room = null; me = null; store.del("ss_room");
     history.replaceState(null, "", location.pathname);
-    stopCountdown(); show("home"); updateCreateCard();
+    stopCountdown(); gHide(); show("home"); updateCreateCard();
   }
 
   // Came in by an invite link (?r=CODE): only joining makes sense, hide "create room"
@@ -387,7 +427,94 @@
     $("btnLeave").textContent = isHost ? "Закрыть комнату" : "Выйти из комнаты";
 
     if (room.countdown) startCountdown(room.countdown); else stopCountdown();
+    renderGame();
   }
+
+  // ---------- "who's faster" ----------
+  // The server says when to turn green ("game_go"); the reaction is timed here, from the frame the
+  // screen turned green to the tap, so a player's ping doesn't count against them.
+  const GAME_HELP = "Экран станет красным, потом зелёным — жми как можно быстрее (клик, тап или пробел). Нажал раньше зелёного — фальстарт.";
+  let gRound = 0, gState = null, gGoAt = 0, gClosed = 0, gHideT = null;
+  const gEl = () => $("game");
+  function gShow(cls, big, small) {
+    gEl().className = "show " + cls;
+    $("gBig").textContent = big; $("gSmall").textContent = small || "";
+    if (!cls.includes("final")) $("gTable").innerHTML = "";
+  }
+  function gHide() { gEl().className = ""; clearTimeout(gHideT); }
+  const nameOf = (id) => { const p = room && room.players.find((x) => x.id === id); return p ? p.name : "вышел"; };
+
+  function renderGame() {
+    const g = room.game;
+    const sc = $("gameScores"); sc.innerHTML = "";
+    const leaders = room.players.filter((p) => g.scores[p.id]).sort((a, b) => g.scores[b.id] - g.scores[a.id]);
+    for (const p of leaders.slice(0, 12)) {
+      const s = document.createElement("span"); s.textContent = p.name;
+      const b = document.createElement("b"); b.textContent = "🏆" + g.scores[p.id]; s.append(b); sc.append(s);
+    }
+    const busy = g.phase === "wait" || g.phase === "go";
+    $("btnGame").disabled = busy || !!room.countdown;
+    $("gameInfo").textContent = busy ? `Идёт раунд (запустил(а) ${g.by})…` : GAME_HELP;
+
+    if (room.countdown || g.phase === "idle") { gState = null; return gHide(); }
+    if (g.round === gClosed) return; // this player closed the window for this round
+    if (busy && !g.participants.includes(me)) return; // joined mid-round: wait for the next one
+
+    if (busy) {
+      if (g.round !== gRound) { gRound = g.round; gState = "wait"; gShow("wait", "Жди зелёного…", "Нажмёшь раньше — фальстарт"); }
+      return;
+    }
+    // phase "done": everyone sees the table
+    if (!g.participants.includes(me) && g.round !== gRound) return;
+    gRound = g.round; gState = "final";
+    const key = (r) => (r.ms != null ? r.ms : r.early ? 1e9 : 2e9);
+    const rows = g.participants.map((id) => ({ id, r: g.results[id] || {} })).sort((a, b) => key(a.r) - key(b.r));
+    const mine = g.results[me];
+    const won = rows[0] && rows[0].r.ms != null;
+    gShow("res final", !won ? "Никто не успел" : rows[0].id === me ? "Ты первый! 🏆" : `Победил(а) ${nameOf(rows[0].id)}`,
+      mine ? (mine.early ? "У тебя фальстарт" : `Твоя реакция: ${mine.ms} мс`) : "");
+    const ul = $("gTable"); ul.innerHTML = "";
+    rows.forEach((x, i) => {
+      const li = document.createElement("li"); if (x.id === me) li.className = "me";
+      const pl = document.createElement("span"); pl.className = "pl"; pl.textContent = x.r.ms != null ? i + 1 : "—";
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = nameOf(x.id);
+      const tm = document.createElement("span");
+      tm.className = "tm" + (x.r.early ? " bad" : x.r.ms == null ? " none" : "");
+      tm.textContent = x.r.early ? "фальстарт" : x.r.ms == null ? "не нажал" : x.r.ms + " мс";
+      li.append(pl, nm, tm); ul.append(li);
+    });
+    clearTimeout(gHideT); gHideT = setTimeout(() => { gClosed = g.round; gHide(); }, 10000);
+  }
+
+  function gameGo(round) {
+    if (round !== gRound || gState !== "wait") return;
+    gState = "go";
+    gShow("go", "ЖМИ!", "");
+    gGoAt = 0;
+    requestAnimationFrame(() => { gGoAt = performance.now(); }); // timed from the green frame
+    beep(990, 0.08, 0.2);
+  }
+
+  function gameTap(e) {
+    if (gState !== "wait" && gState !== "go") return;
+    if (e) e.preventDefault();
+    if (gState === "wait") {
+      gState = "sent"; sendMsg({ t: "game_hit", round: gRound, early: true });
+      return gShow("res", "Фальстарт!", "Ждём остальных…");
+    }
+    const ms = Math.max(1, Math.round(performance.now() - (gGoAt || performance.now())));
+    gState = "sent"; sendMsg({ t: "game_hit", round: gRound, ms });
+    gShow("res", ms + " мс", "Ждём остальных…");
+  }
+  gEl().addEventListener("pointerdown", (e) => { if (!e.target.closest("button")) gameTap(e); });
+  document.addEventListener("keydown", (e) => {
+    if ((e.code === "Space" || e.code === "Enter") && (gState === "wait" || gState === "go")) gameTap(e);
+    else if (e.code === "Escape" && gState === "final") { gClosed = gRound; gHide(); }
+  });
+  $("btnGame").onclick = () => { audio(); gClosed = 0; sendMsg({ t: "game_start" }); };
+  $("gAgain").onclick = () => { gClosed = 0; sendMsg({ t: "game_start" }); };
+  $("gClose").onclick = () => { gClosed = gRound; gState = null; gHide(); };
+
 
   // ---------- countdown ----------
   let cdRaf = null, cdKey = null, lastSec = null;

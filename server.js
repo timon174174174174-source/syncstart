@@ -15,6 +15,10 @@ const ROOM_IDLE_MS = 6 * 3600_000;
 const COUNTDOWNS = [3, 5, 10, 15];
 const DATA_FILE = process.env.DATA_FILE || ""; // where rooms are saved between restarts
 const PING_EVERY_MS = 5_000;
+// "who's faster" reaction game: red screen, turns green after a random pause, fastest tap wins
+const GAME_WAIT_MIN_MS = 2_000;
+const GAME_WAIT_MAX_MS = 6_000;
+const GAME_ANSWER_MS = 3_000; // how long after "go" taps are accepted
 
 const INDEX = fs.readFileSync(path.join(__dirname, "public", "index.html"));
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, "public", "admin.html"));
@@ -144,12 +148,48 @@ function send(ws, msg) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
+function newGame(scores) {
+  return { round: 0, phase: "idle", by: null, participants: [], results: {}, scores: scores || {}, goTimer: null, endTimer: null, endedAt: 0 };
+}
+
+function publicGame(g) {
+  // never includes when "go" happens: clients learn it only from the "game_go" message
+  return { round: g.round, phase: g.phase, by: g.by, participants: g.participants, results: g.results, scores: g.scores };
+}
+
+function stopGame(room) {
+  const g = room.game;
+  clearTimeout(g.goTimer);
+  clearTimeout(g.endTimer);
+  if (g.phase === "wait" || g.phase === "go") g.phase = "idle";
+}
+
+function finishGame(room) {
+  const g = room.game;
+  if (g.phase !== "go" && g.phase !== "wait") return;
+  clearTimeout(g.goTimer);
+  clearTimeout(g.endTimer);
+  g.phase = "done";
+  g.endedAt = now();
+  const times = Object.values(g.results).filter((r) => r.ms != null).map((r) => r.ms);
+  if (times.length) {
+    const best = Math.min(...times);
+    for (const [id, r] of Object.entries(g.results)) if (r.ms === best) g.scores[id] = (g.scores[id] || 0) + 1;
+  }
+  broadcast(room);
+}
+
+function allAnswered(g) {
+  return g.participants.every((id) => g.results[id]);
+}
+
 function publicState(room) {
   return {
     code: room.code,
     host: room.host,
     seconds: room.seconds,
     countdown: room.countdown, // {startAt, by, forced} | null
+    game: publicGame(room.game),
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -186,6 +226,7 @@ function removePlayer(room, id) {
 
 function closeRoom(room) {
   clearTimeout(room.cdTimer);
+  stopGame(room);
   for (const p of room.players.values()) {
     clearTimeout(p.dropTimer);
     send(p.ws, { t: "closed" });
@@ -274,6 +315,7 @@ wss.on("connection", (ws, req) => {
         cdTimer: null,
         players: new Map(),
         banned: new Set(),
+        game: newGame(),
         touched: now(),
         createdAt: now(),
       };
@@ -315,6 +357,7 @@ wss.on("connection", (ws, req) => {
         // the host can start at any time; "forced" just tells others not everyone was ready
         const allReady = [...room.players.values()].every((p) => p.ready);
         room.countdown = { startAt: now() + room.seconds * 1000 + 300, by: player.name, forced: !allReady };
+        stopGame(room); // the real start wins over the mini-game
         finishCountdownLater(room);
         return broadcast(room);
       }
@@ -324,6 +367,43 @@ wss.on("connection", (ws, req) => {
         clearTimeout(room.cdTimer);
         room.countdown = null;
         return broadcast(room);
+
+      case "game_start": {
+        const g = room.game;
+        if (room.countdown || g.phase === "wait" || g.phase === "go") return;
+        if (now() - g.endedAt < 1500) return; // let people see the results
+        const online = [...room.players.values()].filter((p) => p.ws).map((p) => p.id);
+        if (!online.length) return;
+        g.round++;
+        g.phase = "wait";
+        g.by = player.name;
+        g.participants = online;
+        g.results = {};
+        const round = g.round;
+        g.goTimer = setTimeout(() => {
+          if (g.round !== round || g.phase !== "wait") return;
+          if (allAnswered(g)) return finishGame(room); // everyone jumped the gun
+          g.phase = "go";
+          // sent right away (not batched): each browser times the reaction from the moment it shows green
+          for (const id of g.participants) send(room.players.get(id)?.ws, { t: "game_go", round });
+          broadcast(room);
+          g.endTimer = setTimeout(() => g.round === round && finishGame(room), GAME_ANSWER_MS + 500);
+        }, GAME_WAIT_MIN_MS + crypto.randomInt(GAME_WAIT_MAX_MS - GAME_WAIT_MIN_MS));
+        return broadcast(room);
+      }
+
+      case "game_hit": {
+        const g = room.game;
+        if (m.round !== g.round || (g.phase !== "wait" && g.phase !== "go")) return;
+        if (!g.participants.includes(player.id) || g.results[player.id]) return;
+        const ms = Number(m.ms);
+        // a tap before the server said "go" is a false start whatever the client claims
+        if (m.early || g.phase === "wait" || !Number.isFinite(ms)) g.results[player.id] = { early: true };
+        else if (ms < 30 || ms > GAME_ANSWER_MS + 500) return; // impossible / too late
+        else g.results[player.id] = { ms: Math.round(ms) };
+        if (allAnswered(g) && g.phase === "go") return finishGame(room);
+        return broadcast(room);
+      }
 
       case "kick": {
         if (!isHost || m.id === player.id) return;
@@ -395,6 +475,7 @@ function saveRooms() {
       createdAt: r.createdAt,
       touched: r.touched,
       banned: [...r.banned],
+      scores: r.game.scores,
       players: [...r.players.values()].map((p) => ({ id: p.id, token: p.token, name: p.name, ready: p.ready })),
     })),
   };
@@ -423,6 +504,7 @@ function restoreRooms() {
       cdTimer: null,
       players: new Map(),
       banned: new Set(r.banned || []),
+      game: newGame(r.scores && typeof r.scores === "object" ? r.scores : {}),
       touched: r.touched || now(),
       createdAt: r.createdAt || now(),
     };
