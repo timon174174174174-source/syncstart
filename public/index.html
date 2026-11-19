@@ -543,6 +543,7 @@
   function msgNode(m) {
     const d = document.createElement("div");
     d.className = "m" + (m.paid ? " paid" : "");
+    d.dataset.ts = m.ts || 0;
     const src = document.createElement("span");
     src.className = "src " + (m.src === "yt" ? "yt" : "tw");
     src.textContent = m.src === "yt" ? "YT" : "TW";
@@ -569,7 +570,10 @@
       seen.add(m.id);
       const empty = feed.querySelector(".empty");
       if (empty) empty.remove();
-      feed.append(msgNode(m));
+      // keep time order: history from one platform can arrive after live messages from the other
+      let before = null;
+      for (let el = feed.lastElementChild; el && Number(el.dataset.ts) > (m.ts || 0); el = el.previousElementSibling) before = el;
+      feed.insertBefore(msgNode(m), before);
       added++;
     }
     while (feed.childElementCount > MAX_MSGS) feed.firstElementChild.remove();

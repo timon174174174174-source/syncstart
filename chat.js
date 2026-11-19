@@ -8,7 +8,7 @@ const YT_CHANNEL = process.env.YT_CHANNEL ?? "UCFyXybb8JwZlBsbl9faj_aQ"; // empt
 const TWITCH_CHANNEL = (process.env.TWITCH_CHANNEL ?? "muzerere").toLowerCase().replace(/[^a-z0-9_]/g, ""); // empty = off
 const CHECK_MS = 60_000;        // live check while someone has the site open
 const IDLE_CHECK_MS = 600_000;  // and while nobody does
-const BACKLOG = 60;             // messages a newly opened page gets
+const BACKLOG = 100;            // messages a newly opened page gets
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const YT_HEADERS = { "User-Agent": UA, "Accept-Language": "en", Cookie: "SOCS=CAI" }; // SOCS skips the EU consent page
 const TWITCH_GQL_CLIENT = "kimne78kx3ncx6brgo4mv6wki5h1ko"; // Twitch's public web client id
@@ -30,8 +30,16 @@ function emit(event, data) {
   for (const res of clients) res.write(chunk);
 }
 
+const known = new Set(); // ids already in the feed (history and live can overlap)
 function push(msg) {
-  backlog.push(msg);
+  if (known.has(msg.id)) return;
+  known.add(msg.id);
+  if (known.size > 5000) { const keep = [...known].slice(-1000); known.clear(); keep.forEach((x) => known.add(x)); }
+  if (!msg.ts) msg.ts = Date.now();
+  // keep the backlog in time order: history from one platform may arrive after live messages from the other
+  let i = backlog.length;
+  while (i > 0 && backlog[i - 1].ts > msg.ts) i--;
+  backlog.splice(i, 0, msg);
   if (backlog.length > BACKLOG) backlog.shift();
   pending.push(msg);
   if (!flushTimer) flushTimer = setTimeout(flush, 250); // batch bursts into one write per client
@@ -117,7 +125,7 @@ function ytActions(actions) {
     yt.seen.add(r.id);
     if (yt.seen.size > 2000) yt.seen = new Set([...yt.seen].slice(-500));
     const msg = {
-      id: "y" + r.id, src: "yt",
+      id: "y" + r.id, src: "yt", ts: Math.floor(Number(r.timestampUsec) / 1000) || Date.now(),
       name: (r.authorName && r.authorName.simpleText) || "?",
       parts: ytRuns(r.message && r.message.runs),
     };
@@ -227,7 +235,7 @@ function twParse(line) {
     }
     line = line.slice(sp + 1);
   }
-  const m = line.match(/^:(\w+)!\S+ PRIVMSG #\w+ :(.*)$/);
+  const m = line.match(/^:(\w+)!\S+ PRIVMSG #\w+ :?(.*)$/); // history lines may drop the ":" before one-word text
   if (!m) return null;
   let text = m[2];
   const action = /^\x01ACTION (.*)\x01$/.exec(text);
@@ -235,6 +243,7 @@ function twParse(line) {
   const color = /^#[0-9a-fA-F]{6}$/.test(tags.color || "") ? tags.color : null;
   return {
     id: "t" + (tags.id || Math.random().toString(36).slice(2)), src: "tw",
+    ts: Number(tags["tmi-sent-ts"]) || Date.now(),
     name: (tags["display-name"] || m[1]).replace(/\\s/g, " "),
     color, parts: twEmotes(text, tags.emotes),
   };
@@ -250,6 +259,7 @@ function twStart() {
     ws.send("NICK justinfan" + (10000 + Math.floor(Math.random() * 80000)));
     ws.send("JOIN #" + TWITCH_CHANNEL);
     log("twitch chat connected");
+    twHistory();
   });
   ws.on("message", (buf) => {
     for (const line of buf.toString().split("\r\n")) {
@@ -265,6 +275,25 @@ function twStart() {
     log("twitch chat disconnected, retrying");
     me.retry = setTimeout(() => tw === me && twStart(), 10_000);
   });
+}
+
+// Anonymous IRC only delivers messages sent after joining; recent ones come from a public
+// history service (recent-messages.robotty.de), which keeps the channel's chat once asked about it.
+async function twHistory() {
+  try {
+    const r = await fetch(`https://recent-messages.robotty.de/api/v2/recent-messages/${TWITCH_CHANNEL}?limit=${BACKLOG}`, {
+      headers: { "User-Agent": "syncstart-chat" }, signal: AbortSignal.timeout(10_000),
+    });
+    const j = await r.json();
+    let n = 0;
+    for (const line of (j && j.messages) || []) {
+      const msg = twParse(line);
+      if (msg) { push(msg); n++; }
+    }
+    log(`twitch history: ${n} message(s)`);
+  } catch (e) {
+    log("twitch history failed:", e.message);
+  }
 }
 
 function twStop() {
