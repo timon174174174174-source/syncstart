@@ -69,19 +69,37 @@
   .hidden { display: none !important; }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
 
-  /* YouTube live chat: right column on wide screens, bottom sheet on phones */
+  /* stream chat: right column on wide screens, bottom sheet on phones */
   #chat { position: fixed; z-index: 5; background: var(--panel); display: none; flex-direction: column;
     left: 0; right: 0; bottom: 0; height: 70vh; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
     box-shadow: 0 -8px 30px rgba(0,0,0,.5); overflow: hidden; }
   body.chat-open #chat { display: flex; }
-  .chat-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); }
-  .chat-head b { flex: 1; font-size: 14px; }
-  .chat-head a, .chat-foot a { color: var(--blue); text-decoration: none; font-size: 13px; }
+  .chat-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
+  .tab { white-space: nowrap; flex: none; padding: 6px 10px; font-size: 13px; border-radius: 8px; background: transparent; border-color: transparent; color: var(--muted); }
+  .tab.on { background: var(--panel2); border-color: var(--line); color: var(--text); }
+  .tab .ic { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+  .ic.yt { background: #ff3b3b; } .ic.tw { background: #a970ff; } .ic.all { background: var(--accent); border-radius: 50%; animation: blink 1.6s infinite; }
+  .chat-head a, .chat-foot a { color: var(--blue); text-decoration: none; font-size: 13px; white-space: nowrap; }
   .chat-head a:hover, .chat-foot a:hover { text-decoration: underline; }
   .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b;
     margin-right: 7px; vertical-align: 1px; animation: blink 1.6s infinite; }
   @keyframes blink { 50% { opacity: .35; } }
-  #chatFrame { flex: 1; width: 100%; border: 0; background: #0f0f0f; }
+  .pane { flex: 1; min-height: 0; display: none; }
+  .pane.on { display: block; }
+  iframe.pane { width: 100%; border: 0; background: #0f0f0f; }
+  #feedWrap { position: relative; }
+  #feed { height: 100%; overflow-y: auto; padding: 6px 12px 10px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+  #feed .m { padding: 3px 0; }
+  #feed .m.paid { background: #3a2c0c; border-radius: 8px; padding: 5px 8px; margin: 3px -4px; }
+  #feed .src { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 4px; border-radius: 4px; margin-right: 6px; vertical-align: 1px; color: #fff; }
+  #feed .src.yt { background: #cc1f1f; } #feed .src.tw { background: #7c3aed; }
+  #feed .n { font-weight: 700; color: #b9c2cf; margin-right: 4px; }
+  #feed .amt { color: var(--accent); font-weight: 700; margin-right: 4px; }
+  #feed img { height: 22px; vertical-align: middle; margin: -3px 1px; }
+  #feed .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
+  #newMsgs { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: none;
+    background: var(--accent); color: #1a1205; border: 0; border-radius: 999px; padding: 6px 14px; font-size: 13px; }
   .chat-foot { font-size: 12px; color: var(--muted); padding: 6px 12px; border-top: 1px solid var(--line); }
   #chatFab { position: fixed; z-index: 5; right: 16px; bottom: 16px; display: none;
     background: var(--panel2); box-shadow: 0 4px 18px rgba(0,0,0,.45); border-radius: 999px; padding: 10px 16px; }
@@ -171,12 +189,21 @@
 
 <aside id="chat" aria-label="Чат стрима">
   <div class="chat-head">
-    <b><span class="live-dot"></span>Чат стрима</b>
-    <a id="chatWatch" target="_blank" rel="noopener">Смотреть стрим ↗</a>
+    <div class="tabs">
+      <button class="tab" data-tab="all"><span class="ic all"></span>Общий</button>
+      <button class="tab" data-tab="yt"><span class="ic yt"></span>YouTube</button>
+      <button class="tab" data-tab="tw"><span class="ic tw"></span>Twitch</button>
+    </div>
+    <a id="chatWatch" target="_blank" rel="noopener">Смотреть ↗</a>
     <button class="small" id="chatHide" title="Скрыть чат">✕</button>
   </div>
-  <iframe id="chatFrame" title="Чат стрима на YouTube" referrerpolicy="origin"></iframe>
-  <div class="chat-foot">Писать можно, если вошёл в YouTube. Не получается — <a id="chatPopout" target="_blank" rel="noopener">открой чат в отдельном окне</a></div>
+  <div id="feedWrap" class="pane" data-pane="all">
+    <div id="feed"><div class="empty">Сообщений пока нет</div></div>
+    <button id="newMsgs">↓ Новые сообщения</button>
+  </div>
+  <iframe class="pane" data-pane="yt" id="frameYt" title="Чат стрима на YouTube" referrerpolicy="origin"></iframe>
+  <iframe class="pane" data-pane="tw" id="frameTw" title="Чат стрима на Twitch"></iframe>
+  <div class="chat-foot" id="chatFoot"></div>
 </aside>
 <button id="chatFab"><span class="live-dot"></span>Чат стрима</button>
 
@@ -432,53 +459,133 @@
   connect();
 })();
 
-// ---------- YouTube live chat ----------
+// ---------- stream chat: merged feed + YouTube/Twitch tabs ----------
 (() => {
   const $ = (id) => document.getElementById(id);
   const wide = window.matchMedia("(min-width: 1000px)");
-  const prefKey = "ss_chat_hidden";
-  const getPref = () => { try { return localStorage.getItem(prefKey) === "1"; } catch { return false; } };
-  const setPref = (v) => { try { v ? localStorage.setItem(prefKey, "1") : localStorage.removeItem(prefKey); } catch {} };
-  let videoId = null;
-  let loaded = null; // video whose chat is in the iframe
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+  };
+  let live = { youtube: null, twitch: null };
+  let tab = store.get("ss_chat_tab") || "all";
+  const loaded = { yt: null, tw: null }; // what each iframe currently shows
+  const seen = new Set();
+  const feed = $("feed");
+  const MAX_MSGS = 300;
+
+  const anyLive = () => !!(live.youtube || live.twitch);
+  const available = (t) => t === "all" || (t === "yt" && !!live.youtube) || (t === "tw" && !!live.twitch);
+  const urls = {
+    ytWatch: () => `https://www.youtube.com/watch?v=${live.youtube}`,
+    ytChat: () => `https://www.youtube.com/live_chat?v=${live.youtube}&embed_domain=${encodeURIComponent(location.hostname)}&dark_theme=1`,
+    ytPopout: () => `https://www.youtube.com/live_chat?is_popout=1&v=${live.youtube}`,
+    twWatch: () => `https://www.twitch.tv/${live.twitch}`,
+    twChat: () => `https://www.twitch.tv/embed/${live.twitch}/chat?parent=${encodeURIComponent(location.hostname)}&darkpopout`,
+    twPopout: () => `https://www.twitch.tv/popout/${live.twitch}/chat`,
+  };
+
+  function render() {
+    const open = document.body.classList.contains("chat-open");
+    const t = available(tab) ? tab : "all"; // remembered tab may be for a platform that is offline now
+    for (const b of document.querySelectorAll(".tab")) {
+      b.classList.toggle("hidden", !available(b.dataset.tab));
+      b.classList.toggle("on", b.dataset.tab === t);
+    }
+    for (const p of document.querySelectorAll("#chat .pane")) p.classList.toggle("on", p.dataset.pane === t);
+    // iframes load only once their tab is opened, and reload when the stream changes
+    if (open && t === "yt" && loaded.yt !== live.youtube) { loaded.yt = live.youtube; $("frameYt").src = urls.ytChat(); }
+    if (open && t === "tw" && loaded.tw !== live.twitch) { loaded.tw = live.twitch; $("frameTw").src = urls.twChat(); }
+    const watch = t === "tw" || (t === "all" && !live.youtube) ? (live.twitch && urls.twWatch()) : (live.youtube && urls.ytWatch());
+    if (watch) $("chatWatch").href = watch;
+    const foot = $("chatFoot");
+    const popout = (name, href) => {
+      foot.textContent = `Писать можно, если вошёл в ${name}. Не получается — `;
+      const a = document.createElement("a");
+      a.target = "_blank"; a.rel = "noopener"; a.href = href; a.textContent = "открой чат в отдельном окне";
+      foot.append(a);
+    };
+    if (t === "yt") popout("YouTube", urls.ytPopout());
+    else if (t === "tw") popout("Twitch", urls.twPopout());
+    else foot.textContent = live.youtube && live.twitch ? "Чтобы написать, открой вкладку YouTube или Twitch"
+      : live.youtube ? "Чтобы написать, открой вкладку YouTube" : "Чтобы написать, открой вкладку Twitch";
+    if (t === "all") stickIfNeeded(true);
+  }
 
   function setOpen(open) {
-    document.body.classList.toggle("chat-open", open && !!videoId);
-    if (open && videoId && loaded !== videoId) {
-      loaded = videoId;
-      $("chatFrame").src = `https://www.youtube.com/live_chat?v=${videoId}&embed_domain=${encodeURIComponent(location.hostname)}&dark_theme=1`;
+    document.body.classList.toggle("chat-open", open && anyLive());
+    render();
+  }
+
+  function applyLive(next) {
+    const was = anyLive();
+    live = { youtube: next.youtube || null, twitch: next.twitch || null };
+    document.body.classList.toggle("live", anyLive());
+    if (!live.youtube) { $("frameYt").removeAttribute("src"); loaded.yt = null; }
+    if (!live.twitch) { $("frameTw").removeAttribute("src"); loaded.tw = null; }
+    if (!anyLive()) return setOpen(false);
+    if (!was) return setOpen(wide.matches && store.get("ss_chat_hidden") !== "1"); // on a phone it opens by the button
+    render();
+  }
+
+  // ----- merged feed -----
+  let stuck = true; // follow new messages while the reader is at the bottom
+  feed.addEventListener("scroll", () => {
+    stuck = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+    if (stuck) $("newMsgs").style.display = "none";
+  });
+  $("newMsgs").onclick = () => { stuck = true; stickIfNeeded(); };
+  function stickIfNeeded(silent) {
+    if (stuck) { feed.scrollTop = feed.scrollHeight; $("newMsgs").style.display = "none"; }
+    else if (!silent) $("newMsgs").style.display = "block";
+  }
+
+  function msgNode(m) {
+    const d = document.createElement("div");
+    d.className = "m" + (m.paid ? " paid" : "");
+    const src = document.createElement("span");
+    src.className = "src " + (m.src === "yt" ? "yt" : "tw");
+    src.textContent = m.src === "yt" ? "YT" : "TW";
+    const n = document.createElement("span");
+    n.className = "n";
+    n.textContent = m.name;
+    if (m.color && /^#[0-9a-fA-F]{6}$/.test(m.color)) n.style.color = m.color;
+    d.append(src, n);
+    if (m.paid) { const a = document.createElement("span"); a.className = "amt"; a.textContent = m.paid; d.append(a); }
+    for (const p of m.parts || []) {
+      if (p.img && /^https:\/\/(static-cdn\.jtvnw\.net|[\w.-]+\.(ggpht|googleusercontent|ytimg)\.com)\//.test(p.img)) {
+        const i = document.createElement("img");
+        i.src = p.img; i.alt = p.alt || ""; i.title = p.alt || ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer";
+        d.append(i);
+      } else if (p.t) d.append(document.createTextNode(p.t));
     }
+    return d;
   }
 
-  function apply(id) {
-    if (id === videoId) return;
-    videoId = id;
-    document.body.classList.toggle("live", !!id);
-    if (!id) {
-      setOpen(false);
-      $("chatFrame").removeAttribute("src");
-      loaded = null;
-      return;
+  function addMsgs(list) {
+    let added = 0;
+    for (const m of list) {
+      if (!m || seen.has(m.id)) continue; // the backlog is resent after a reconnect
+      seen.add(m.id);
+      const empty = feed.querySelector(".empty");
+      if (empty) empty.remove();
+      feed.append(msgNode(m));
+      added++;
     }
-    $("chatWatch").href = `https://www.youtube.com/watch?v=${id}`;
-    $("chatPopout").href = `https://www.youtube.com/live_chat?is_popout=1&v=${id}`;
-    setOpen(wide.matches && !getPref()); // on a phone the chat opens only by the button
+    while (feed.childElementCount > MAX_MSGS) feed.firstElementChild.remove();
+    if (seen.size > 3000) { const keep = [...seen].slice(-1000); seen.clear(); keep.forEach((x) => seen.add(x)); }
+    if (added) stickIfNeeded();
   }
 
-  $("chatFab").onclick = () => { setPref(false); setOpen(true); };
-  $("chatHide").onclick = () => { if (wide.matches) setPref(true); setOpen(false); };
+  // ----- wiring -----
+  for (const b of document.querySelectorAll(".tab")) b.onclick = () => { tab = b.dataset.tab; store.set("ss_chat_tab", tab); render(); };
+  $("chatFab").onclick = () => { store.set("ss_chat_hidden", null); setOpen(true); };
+  $("chatHide").onclick = () => { if (wide.matches) store.set("ss_chat_hidden", "1"); setOpen(false); };
 
-  async function poll() {
-    try {
-      const r = await fetch("/api/live", { cache: "no-store" });
-      if (r.ok) apply((await r.json()).videoId || null);
-    } catch {}
-  }
-  // ?chat=VIDEO_ID shows that stream's chat regardless of the channel (for testing)
-  const forced = new URLSearchParams(location.search).get("chat");
-  if (/^[\w-]{11}$/.test(forced || "")) return apply(forced);
-  poll();
-  setInterval(poll, 60_000);
+  const es = new EventSource("/api/chat"); // reconnects by itself
+  es.addEventListener("live", (e) => { try { applyLive(JSON.parse(e.data)); } catch {} });
+  es.addEventListener("msgs", (e) => { try { addMsgs(JSON.parse(e.data)); } catch {} });
+  render();
 })();
 </script>
 </body>
